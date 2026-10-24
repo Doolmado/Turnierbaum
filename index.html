@@ -153,6 +153,14 @@ textarea.in{min-height:96px;resize:vertical}
 .foot{margin-top:30px;color:var(--ink2);font-size:13px}
 .link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font-size:inherit}
 
+#fsbar{display:none}
+body.fs{padding-block:12px}
+body.fs .wrap{max-width:none}
+body.fs #fsbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+body.fs #hdr,body.fs #bar,body.fs #tabs,body.fs .foot,body.fs .hint{display:none}
+body.fs .blk{margin-bottom:26px}
+.fsbar-t{font:700 24px var(--f-disp);text-transform:uppercase;letter-spacing:.05em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fsbar-t small{font:600 14px var(--f-disp);letter-spacing:.12em;color:var(--ink2);margin-left:12px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:80;
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;max-width:min(520px,calc(100% - 32px));font-size:14px}
 @media (max-width:560px){.col{width:216px}.cols{gap:44px}.pr{grid-template-columns:1fr 64px}.pr .btn{grid-column:1 / -1}}
@@ -160,7 +168,7 @@ textarea.in{min-height:96px;resize:vertical}
 </style>
 </head>
 <body>
-<div id="root"><div class="wrap"><header id="hdr"></header><div id="bar"></div><nav id="tabs" class="tabs" role="tablist"></nav><main id="pane"></main></div><div id="modal"></div></div>
+<div id="root"><div class="wrap"><div id="fsbar"></div><header id="hdr"></header><div id="bar"></div><nav id="tabs" class="tabs" role="tablist"></nav><main id="pane"></main></div><div id="modal"></div></div>
 <script type="application/json" id="state">{
  "v": 1,
  "name": "Sommer Cup (Beispieldaten)",
@@ -268,7 +276,7 @@ function fix(st){
 }
 var saved=fix(JSON.parse($('#state').textContent));
 var draft=clone(saved);
-var canEdit=true,editMode=true,tab='bracket',modalMid=null,confirmKey=null;
+var canEdit=true,editMode=true,tab='bracket',modalMid=null,confirmKey=null,fsMode=false;
 
 /* ---------- Turnierlogik ---------- */
 function seedOrder(N){var o=[1];while(o.length<N){var s=o.length*2;o=o.reduce(function(a,x){a.push(x,s+1-x);return a},[])}return o}
@@ -408,7 +416,7 @@ function renderBar(){
   var el=$('#bar');
   el.innerHTML='<div class="bar"><span class="st"><i class="dot"></i>Wird automatisch in diesem Browser gespeichert</span>'
    +'<span class="seg"><button class="btn" data-a="mode" data-v="edit" aria-pressed="'+editMode+'">Bearbeiten</button><button class="btn" data-a="mode" data-v="view" aria-pressed="'+!editMode+'">Ansicht</button></span>'
-   +'<button class="btn" data-a="export">Sichern</button><button class="btn" data-a="import">Laden</button>'
+   +'<button class="btn" data-a="fs">Vollbild</button><button class="btn" data-a="export">Sichern</button><button class="btn" data-a="import">Laden</button>'
    +'<input type="file" id="imp" accept="application/json,.json" hidden></div>';
 }
 function renderTabs(){
@@ -440,7 +448,24 @@ function renderModal(){
    +'<p class="hint">Bei unterschiedlichen Punkten wird der Sieger automatisch gesetzt. Bei Gleichstand tippst du auf „Sieger“.</p>'
    +'<div class="acts"><button class="btn danger" data-a="clearres">Ergebnis löschen</button><button class="btn primary" data-a="close">Fertig</button></div></div></div>';
 }
-function refresh(){renderHdr();renderBar();renderTabs();renderPane();renderModal()}
+function renderFs(){
+  var el=$('#fsbar');
+  if(!fsMode){el.innerHTML='';return}
+  var S=summary(draft);
+  el.innerHTML='<span class="fsbar-t">'+esc(draft.name||'Unbenanntes Turnier')+(S.total?'<small>'+S.played+' / '+S.total+' Spiele</small>':'')+'</span><button class="btn" data-a="fsx">Vollbild beenden</button>';
+}
+function setFs(on){
+  fsMode=on;
+  if(on){editMode=true;tab='bracket';confirmKey=null}
+  document.body.classList.toggle('fs',on);
+  try{
+    if(on&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(function(){});
+    if(!on&&document.fullscreenElement)document.exitFullscreen().catch(function(){});
+  }catch(e){}
+  refresh();
+  requestAnimationFrame(function(){if(tab==='bracket')drawLines()});
+}
+function refresh(){renderFs();renderHdr();renderBar();renderTabs();renderPane();renderModal()}
 
 function srcText(src,nums){return (src.t==='win'?'Sieger':'Verlierer')+' #'+nums[src.m]}
 function bracketHtml(){
@@ -540,7 +565,7 @@ function persist(){
 function commit(full){
   normalize(draft);
   persist();
-  if(full)refresh();else renderHdr();
+  if(full)refresh();else{renderHdr();renderFs()}
 }
 function setScore(pid,val){
   var o=summary(draft).R[modalMid];if(!o)return;
@@ -577,6 +602,8 @@ document.addEventListener('click',function(e){
   var a=el.dataset.a,v=el.dataset.v;
   if(a==='closeov'&&e.target!==el)return;
   if(a==='tab'){tab=v;confirmKey=null;renderTabs();renderPane();return}
+  if(a==='fs'){setFs(true);return}
+  if(a==='fsx'){setFs(false);return}
   if(a==='mode'){editMode=v==='edit';modalMid=null;confirmKey=null;refresh();return}
   if(a==='export'){
     var blob=new Blob([JSON.stringify(draft,null,1)],{type:'application/json'}),u=URL.createObjectURL(blob),l=document.createElement('a');
@@ -614,6 +641,7 @@ document.addEventListener('change',function(e){
 });
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape'&&modalMid){modalMid=null;renderModal();return}
+  if(e.key==='Escape'&&fsMode&&!document.fullscreenElement){setFs(false);return}
   if(e.key==='Enter'){
     if(e.target.id==='np'&&canEdit){addPlayers([e.target.value]);commit(true);var n=$('#np');if(n)n.focus()}
     else if(e.target.classList&&e.target.classList.contains('match')&&e.target.dataset.a==='open'&&can()){modalMid=e.target.dataset.mid;renderModal();var f=document.querySelector('#modal input');if(f)f.focus()}
@@ -627,6 +655,7 @@ try{
 }catch(e){}
 normalize(draft);
 refresh();
+document.addEventListener('fullscreenchange',function(){if(!document.fullscreenElement&&fsMode)setFs(false)});
 var raf=0;
 window.addEventListener('resize',function(){cancelAnimationFrame(raf);raf=requestAnimationFrame(function(){if(tab==='bracket')drawLines()})});
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){if(tab==='bracket')drawLines()});
