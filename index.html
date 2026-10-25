@@ -303,7 +303,7 @@ function uid(){return 'p'+Math.random().toString(36).slice(2,8)}
 function fix(st){
   st.players=st.players||[];st.results=st.results||{};
   st.format=st.format==='double'?'double':st.format==='groups'?'groups':'single';
-  st.groups=Math.max(1,Math.min(8,parseInt(st.groups,10)||2));st.adv=Math.max(1,Math.min(4,parseInt(st.adv,10)||2));st.ko=st.ko==='double'?'double':'single';
+  st.groups=Math.max(1,Math.min(8,parseInt(st.groups,10)||2));st.adv=Math.max(1,Math.min(4,parseInt(st.adv,10)||2));st.ko=st.ko==='double'?'double':'single';st.tie=st.tie==='h2h'?'h2h':'seed';
   if(st.third==null)st.third=true;if(st.reset==null)st.reset=true;
   st.name=st.name||'';st.sub=st.sub||'';st.info=st.info||'';
   return st;
@@ -440,7 +440,29 @@ function groupTables(st,B){
       if(sa>sb){x.w++;y.l++;x.pts+=3}else if(sb>sa){y.w++;x.l++;y.pts+=3}else{x.d++;y.d++;x.pts++;y.pts++}
     });
     var list=ids.map(function(id){return rows[id]});
-    list.sort(function(u,v){return v.pts-u.pts||(v.gf-v.ga)-(u.gf-u.ga)||v.gf-u.gf||u.seed-v.seed});
+    var overall=function(u,v){return (v.gf-v.ga)-(u.gf-u.ga)||v.gf-u.gf||u.seed-v.seed};
+    list.sort(function(u,v){return v.pts-u.pts||overall(u,v)});
+    if(st.tie==='h2h'){
+      var out=[],i=0;
+      while(i<list.length){
+        var j=i;while(j+1<list.length&&list[j+1].pts===list[i].pts)j++;
+        var run=list.slice(i,j+1);
+        if(run.length>1){
+          var set={},mini={};
+          run.forEach(function(r){set[r.id]=1;mini[r.id]={pts:0,gf:0,ga:0}});
+          B.gm[gi].forEach(function(mid){
+            var m=B.m[mid],a=m.a.id,b=m.b.id,r=st.results[mid];
+            if(!set[a]||!set[b]||!hasScores(r,a,b))return;
+            var sa=Number(r.s[a]),sb=Number(r.s[b]);
+            mini[a].gf+=sa;mini[a].ga+=sb;mini[b].gf+=sb;mini[b].ga+=sa;
+            if(sa>sb)mini[a].pts+=3;else if(sb>sa)mini[b].pts+=3;else{mini[a].pts++;mini[b].pts++}
+          });
+          run.sort(function(u,v){var x=mini[u.id],y=mini[v.id];return y.pts-x.pts||(y.gf-y.ga)-(x.gf-x.ga)||y.gf-x.gf||overall(u,v)});
+        }
+        out=out.concat(run);i=j+1;
+      }
+      list=out;
+    }
     return {rows:list,complete:done===B.gm[gi].length,done:done,total:B.gm[gi].length};
   });
 }
@@ -702,7 +724,7 @@ function bracketHtml(){
       return '<div class="gcard"><h3>'+esc(g.name)+'<small>'+t.done+' / '+t.total+' Spiele</small></h3>'
        +'<div class="tbl-wrap"><table class="gt"><thead><tr><th></th><th>Name</th><th>Sp</th><th>S</th><th>U</th><th>N</th><th>Diff</th><th>Pkt</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
        +g.rounds.map(function(rd){return '<div class="gr"><h4>'+esc(rd.name)+'</h4>'+rd.ids.map(gmatch).join('')+'</div>'}).join('')+'</div>';
-    }).join('')+'</div><p class="hint" style="margin-top:12px">Die ersten '+K+' jeder Gruppe kommen weiter (farbig). Sieg 3 Punkte, Unentschieden 1. Bei Gleichstand entscheiden Tordifferenz, erzielte Punkte und dann der Seed.</p></section>';
+    }).join('')+'</div><p class="hint" style="margin-top:12px">Die ersten '+K+' jeder Gruppe kommen weiter (farbig). Sieg 3 Punkte, Unentschieden 1. '+tieText(draft)+'</p></section>';
   }
   return podiumHtml(ranking(draft,S))+B.blocks.map(function(bl){
     if(bl.groups)return groupsHtml(bl);
@@ -760,13 +782,15 @@ function playersEdit(){
    +'<section><h2>Setzliste</h2><div class="tools" style="margin-bottom:12px"><button class="btn" data-a="shuffle">Zufällig mischen</button><button class="btn" data-a="sortaz">A–Z sortieren</button><button class="btn" data-a="reverse">Reihenfolge umkehren</button></div>'
    +(n?'<div class="plist">'+list+'</div>':'<p class="h">Noch niemand eingetragen.</p>')+'</section></div>';
 }
+function tieText(d){return d.tie==='h2h'?'Bei Punktgleichheit entscheidet zuerst der direkte Vergleich (Punkte, Differenz und erzielte Punkte in den Spielen untereinander), dann Gesamtdifferenz, erzielte Punkte und der Seed.':'Bei Punktgleichheit entscheiden Tordifferenz, erzielte Punkte und dann der Seed.'}
 function koF(d){return d.format==='groups'?d.ko:d.format}
 function groupSettings(d){
   var gs=groupSetup(d),opt=function(from,to,cur){var o='';for(var i=from;i<=to;i++)o+='<option value="'+i+'"'+(i===cur?' selected':'')+'>'+i+'</option>';return o};
   var info=gs?gs.G+' Gruppe'+(gs.G>1?'n':'')+' mit '+gs.groups.map(function(g){return g.length}).join(' / ')+' Teilnehmern. Es kommen '+gs.K+' pro Gruppe weiter ('+(gs.G*gs.K)+' im K.-o.-System).':'Mindestens 2 Teilnehmer nötig.';
   return '<section class="field"><label for="f-groups">Anzahl Gruppen</label><select class="in" id="f-groups" data-f="groups">'+opt(1,8,d.groups)+'</select></section>'
    +'<section class="field"><label for="f-adv">Aufsteiger pro Gruppe</label><select class="in" id="f-adv" data-f="adv">'+opt(1,4,d.adv)+'</select><p class="hint">'+esc(info)+'</p></section>'
-   +'<section class="field"><label for="f-ko">Modus der K.-o.-Runde</label><select class="in" id="f-ko" data-f="ko"><option value="single"'+(d.ko==='single'?' selected':'')+'>Single Elimination</option><option value="double"'+(d.ko==='double'?' selected':'')+'>Double Elimination</option></select></section>';
+   +'<section class="field"><label for="f-ko">Modus der K.-o.-Runde</label><select class="in" id="f-ko" data-f="ko"><option value="single"'+(d.ko==='single'?' selected':'')+'>Single Elimination</option><option value="double"'+(d.ko==='double'?' selected':'')+'>Double Elimination</option></select></section>'
+   +'<section class="field"><label for="f-tie">Wertung bei Punktgleichheit</label><select class="in" id="f-tie" data-f="tie"><option value="seed"'+(d.tie==='seed'?' selected':'')+'>Seed (nach Differenz und erzielten Punkten)</option><option value="h2h"'+(d.tie==='h2h'?' selected':'')+'>Direkter Vergleich</option></select><p class="hint">'+esc(tieText(d))+'</p></section>';
 }
 function settingsHtml(){
   var d=draft;
@@ -863,6 +887,7 @@ document.addEventListener('change',function(e){
   if(f==='format'){draft.format=t.value;commit(true)}
   else if(f==='groups'||f==='adv'){draft[f]=parseInt(t.value,10)||2;commit(true)}
   else if(f==='ko'){draft.ko=t.value;commit(true)}
+  else if(f==='tie'){draft.tie=t.value;commit(true)}
   else if(f==='third'||f==='reset'){draft[f]=t.checked;commit(true)}
   else if(t.id==='imp'){var fl=t.files[0];if(!fl)return;var rd=new FileReader();rd.onload=function(){try{var d=fix(JSON.parse(rd.result));if(!Array.isArray(d.players))throw 0;draft=d;modalMid=null;commit(true);toast('Turnier geladen.')}catch(x){toast('Die Datei ist kein gültiges Turnier.')}t.value=''};rd.readAsText(fl)}
   else if(f==='seed'){move(+t.dataset.i,(parseInt(t.value,10)||1)-1);commit(true)}
